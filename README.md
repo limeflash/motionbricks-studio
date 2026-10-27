@@ -17,14 +17,22 @@ Claude is the text layer and turns a description into key poses, targets and a r
 | `motion_hit_reaction` | MotionBricks, ~0.3 s | light / medium / knockback from front, back, left, right. Front knockback = the probe's approved one |
 | `motion_transition` | MotionBricks, ~4 ms a step | from a pose or a clip's end through target poses (or another clip's frame) |
 | `motion_from_keys` | Kimodo, ~2-3 s | full-body key poses, hand/foot targets, the root's ground path |
-| `motion_vault` | Kimodo | over an obstacle by height and speed (draft) |
+| `motion_vault` | Kimodo | over an obstacle by height and speed: a running jump (default, as the probe's approved one) or a one-hand vault |
 | `motion_locomotion` | Kimodo | along a path; `limp_right` / `limp_left` or your own style pose (draft) |
 | `motion_retarget` | Blender, ~10 s | the clip on the freak again with another style preset / travel mode |
 | `motion_export` | | the loco clip JSON to `D:\Pictures\build a freak\forms\skull_anim\generated\skull_<name>_clip.json` |
 | `motion_show`, `motion_poses` | | a clip's card or the recent list; the pose library |
 
 Every generation tool takes `name`, `freak` / `form` (SKULL heavy, with the game's 4.0824 legs, is the one wired up),
-and `gpu_ok`.
+and `gpu_ok`. `motion_vault` and `motion_from_keys` also take `blocking=true`: the key poses interpolated on the freak with
+no model and no GPU (`python/blocking.py`, a few seconds), to judge the poses before Kimodo runs through them.
+
+## Checks: the card says what looks wrong
+Every clip is checked and the card lists what fails (a yellow "Check" pill), and the tool text tells the calling Claude to
+pass it on: keys the model missed by over 10 cm, feet under the floor, legs through the obstacle, a hand or foot off its
+target (on SOMA, `soma.checks`); and on the freak itself (`blender/retarget.py`): knees and soles through the obstacle
+(SKULL's feet are tall: his ankle sits 0.89 stud over the sole), a hand off its plant, anim's arm clearance pushing the
+arms far off the body. The card also shows each key pose as a button (frame, and how far the motion came out from it).
 
 ## How a clip is made
 1. A worker generates a SOMA take (77 joints, 30 fps): `python/mb_worker.py` (MotionBricks' motion player on our
@@ -68,9 +76,10 @@ Paths (environment overrides): `MBS_MOTIONBRICKS` `H:\tools\motionbricks`, `MBS_
 - Done: the knockback end to end (generated from our poses, played in the card, exported and checked).
 - The limp (`limp_right`) reads in numbers: the bad knee bends about half as much as the good one (mean 28° vs 47°),
   it stands 41% of the time vs 50%, the trunk leans 6° over the good leg.
-- The vault: the legs clear the box except the knees grazing the near top edge for a frame at the plant; the palms are
-  laid on the top after generation (Kimodo lets them drift up; raising its constraint guidance only broke the poses).
-  On SKULL the hands still do not reach the box: the retarget carries arm rotations, not hand positions. Next: lay
-  SKULL's hand(s) on the box in `blender/retarget.py`, as the probe's bonebreaker did with `wrist_keys`.
+- The vault (`python/recipes.py`): by default a running jump like the probe's approved MotionBricks jump, blocked from our
+  own poses with the feet placed like IK controls (take-off, knee attack, lead leg over, trail leg through, landing);
+  it clears the box on SOMA and on SKULL. Kimodo through those keys makes a natural leap but strays 20-25 cm from the
+  airborne keys (reported on the card). `style=hand` is a one-hand tuck vault for taller obstacles: the palm is laid on the
+  top after generation on SOMA and again on SKULL (the retarget carries arm rotations, not hand positions).
 - Drafts, not judged by the owner: the walk along a path, keyed motion.
 - Only SKULL heavy is wired up for the retarget; other freaks and forms need their rigs in `blender/retarget.py`.

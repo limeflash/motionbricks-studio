@@ -172,7 +172,13 @@ func (a *app) generate(ctx context.Context, w *worker, c common, toolName, op st
 	preset, travel string, marks func(take map[string]any) map[string]any) (reply, error) {
 	id := c.Name + "-" + time.Now().Format("0102-150405")
 	opArgs["out"] = a.dir(id)
-	take, err := a.gpuJob(ctx, w, c.GPUOK, op, opArgs)
+	var take map[string]any
+	var err error
+	if w == nil {
+		take, err = a.blocking(ctx, op, opArgs)
+	} else {
+		take, err = a.gpuJob(ctx, w, c.GPUOK, op, opArgs)
+	}
 	if err != nil {
 		return reply{}, err
 	}
@@ -244,6 +250,7 @@ type keyArgs struct {
 	Seed      int               `json:"seed"`
 	Steps     int               `json:"steps"`
 	Travel    string            `json:"travel"`
+	Blocking  bool              `json:"blocking"`
 }
 
 type vaultArgs struct {
@@ -251,7 +258,9 @@ type vaultArgs struct {
 	HeightStuds   float64 `json:"height_studs"`
 	Speed         string  `json:"speed"`
 	ApproachStuds float64 `json:"approach_studs"`
+	Hand          string  `json:"hand"`
 	Seed          int     `json:"seed"`
+	Blocking      bool    `json:"blocking"`
 }
 
 type locoArgs struct {
@@ -423,6 +432,7 @@ var tools = []tool{
 			"seed":      integer("Random seed (default 0); change it for a variation."),
 			"steps":     integer("Diffusion steps (default 100)."),
 			"travel":    enum("Export travel: path (default), root or strip.", "path", "root", "strip"),
+			"blocking":  boolean("Blocking preview: the key poses interpolated on the freak, no model and no GPU (seconds). Check the poses this way before generating."),
 		}),
 		run: handler(func(ctx context.Context, a *app, p keyArgs) (reply, error) {
 			p.fill("keyed")
@@ -433,22 +443,32 @@ var tools = []tool{
 			if len(p.RootPath) > 0 {
 				args["root_path"] = raws([]json.RawMessage{p.RootPath})[0]
 			}
-			return a.generate(ctx, a.kimodo, p.common, "motion_from_keys", "generate", args, p, "move", or(p.Travel, "path"), nil)
+			w := a.kimodo
+			if p.Blocking {
+				w = nil
+			}
+			return a.generate(ctx, w, p.common, "motion_from_keys", "generate", args, p, "move", or(p.Travel, "path"), nil)
 		})},
 
 	{Name: "motion_vault", UI: true,
-		Description: "Vault over an obstacle (Kimodo through our own vault keys: approach, hands planted on the top, legs tucked over, landing, run-out; text-free). Draft quality: judge it on the card.",
+		Description: "Vault over an obstacle: a one-hand tuck vault (Kimodo through our own keys: take-off, the palm planted on the top, knees tucked as the body turns over the hand, legs dropped past the far edge, landing crouch, rise; text-free). blocking=true shows the keys alone first, without the GPU.",
 		InputSchema: object(nil, commonProps, props{
 			"height_studs":   number("Obstacle height (studs, default 2.5)."),
 			"speed":          enum("Approach speed (default run).", "walk", "run"),
-			"approach_studs": number("Run-up before the obstacle (studs, default 6)."),
+			"approach_studs": number("Run-up before the obstacle (studs, default 10)."),
+			"hand":           enum("The hand planted on the top (default left: SKULL's bone hand; the revolver stays up).", "left", "right"),
 			"seed":           integer("Random seed (default 0)."),
+			"blocking":       boolean("Blocking preview: the vault's key poses interpolated on the freak, no model and no GPU."),
 		}),
 		run: handler(func(ctx context.Context, a *app, p vaultArgs) (reply, error) {
 			p.fill("vault")
 			args := map[string]any{"height": def(p.HeightStuds, 2.5) * stud, "speed": or(p.Speed, "run"),
-				"approach": def(p.ApproachStuds, 6) * stud, "seed": p.Seed}
-			return a.generate(ctx, a.kimodo, p.common, "motion_vault", "vault", args, p, "move", "path",
+				"approach": def(p.ApproachStuds, 10) * stud, "hand": or(p.Hand, "left"), "seed": p.Seed}
+			w := a.kimodo
+			if p.Blocking {
+				w = nil
+			}
+			return a.generate(ctx, w, p.common, "motion_vault", "vault", args, p, "move", "path",
 				func(t map[string]any) map[string]any {
 					return map[string]any{"takeoff": secs(t, "takeoff_frame"), "land": secs(t, "land_frame")}
 				})
@@ -617,6 +637,7 @@ func (a *app) clipReply(r *record) (reply, error) {
 		Marks   map[string]any                        `json:"marks"`
 		Contact []int                                 `json:"contact"`
 		Scale   float64                               `json:"soma_scale"`
+		Checks  []string                              `json:"checks"`
 		Joints  map[string]map[string]json.RawMessage `json:"joints"`
 	}
 	if err := json.Unmarshal(b, &c); err != nil {
@@ -644,8 +665,13 @@ func (a *app) clipReply(r *record) (reply, error) {
 	for i, jn := range rigNodes {
 		nodes[i] = jn[1]
 	}
+	// the key frames (Kimodo / blocking keys, or the frames MotionBricks reached its targets) and how far each came out
+	kf := r.Take["key_frames"]
+	if kf == nil {
+		kf = r.Take["step_frames"]
+	}
 	meta := map[string]any{"clip": map[string]any{"fps": c.FPS, "frames": c.Frames, "loop": c.Loop, "joints": nodes,
-		"q": q, "off": off, "marks": c.Marks, "contact": c.Contact}}
+		"q": q, "off": off, "marks": c.Marks, "contact": c.Contact, "keys": kf, "key_miss_cm": r.Take["key_max_miss_cm"]}}
 	if glb, err := os.ReadFile(a.rigPath(r.Freak, r.Form)); err == nil {
 		meta["rig"] = map[string]any{"data": base64.StdEncoding.EncodeToString(glb), "name": r.Freak + " " + r.Form}
 	}
@@ -694,7 +720,12 @@ func (a *app) clipReply(r *record) (reply, error) {
 	}
 	saved := []string{a.clipPath(r)}
 	saved = append(saved, r.Exported...)
-	card := map[string]any{"kind": "clip", "title": r.Name, "status": "done", "clip_id": r.ID, "tool": r.Tool,
+	warnings := append(a.warnings(r), c.Checks...)
+	status := "done"
+	if len(warnings) > 0 {
+		status = "warn"
+	}
+	card := map[string]any{"kind": "clip", "title": r.Name, "status": status, "clip_id": r.ID, "tool": r.Tool, "warnings": warnings,
 		"summary": fmt.Sprintf("%s · %d frames · %.1f studs", r.Tool, c.Frames, travel), "settings": settings, "saved": saved,
 		"next": []map[string]string{
 			{"label": "Export JSON", "prompt": fmt.Sprintf("Export motion clip %s with motion_export.", r.ID)},
@@ -702,5 +733,39 @@ func (a *app) clipReply(r *record) (reply, error) {
 		}}
 	text := fmt.Sprintf("Clip %s: %s on %s %s, %d frames (%.2f s), travel %.1f studs.\nPreview: %s\nClip JSON: %s",
 		r.ID, r.Tool, r.Freak, r.Form, c.Frames, float64(c.Frames)/30, travel, a.previewURL(r.ID), a.clipPath(r))
+	if len(warnings) > 0 {
+		text += "\nSomething looks wrong; tell the owner:\n- " + strings.Join(warnings, "\n- ")
+	}
 	return reply{Text: text, Card: card, Meta: meta}, nil
+}
+
+var armsMoved = regexp.MustCompile(`arms moved for clearance \([^)]*\): R out (\d+) swing (\d+), L out (\d+) swing (\d+)`)
+
+// warnings gathers what the take's own checks (python/soma.py checks) and the Blender retarget's log say went wrong.
+func (a *app) warnings(r *record) []string {
+	var out []string
+	if ws, ok := r.Take["warnings"].([]any); ok {
+		for _, w := range ws {
+			out = append(out, fmt.Sprint(w))
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(a.dir(r.ID), "retarget.log"))
+	for _, line := range strings.Split(string(log), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "WARNING ") {
+			out = append(out, "on the freak: "+strings.TrimPrefix(line, "WARNING "))
+		}
+		if m := armsMoved.FindStringSubmatch(line); m != nil {
+			worst := 0
+			for _, v := range m[1:] {
+				var n int
+				fmt.Sscan(v, &n)
+				worst = max(worst, n)
+			}
+			if worst > 45 {
+				out = append(out, fmt.Sprintf("on the freak: the arms were pushed up to %d° off the body to clear it (the pose drives them into the torso)", worst))
+			}
+		}
+	}
+	return out
 }

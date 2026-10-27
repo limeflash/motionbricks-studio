@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -250,6 +251,37 @@ func tail(path string, n int) string {
 		lines = lines[len(lines)-n:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// blocking runs python/blocking.py once with the MotionBricks venv's python: a recipe's keys interpolated, no model,
+// no GPU. op is the worker op the recipe stands behind.
+func (a *app) blocking(ctx context.Context, op string, args map[string]any) (map[string]any, error) {
+	if _, err := os.Stat(a.skeleton); err != nil {
+		return nil, errors.New("the SOMA skeleton is not there yet: run any MotionBricks tool once (motion_poses)")
+	}
+	recipe := map[string]string{"generate": "keyed"}[op]
+	if recipe == "" {
+		recipe = op
+	}
+	args = maps.Clone(args)
+	delete(args, "steps")
+	b, _ := json.Marshal(args)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, a.mb.python, filepath.Join(a.here, "python", "blocking.py"), recipe, string(b))
+	cmd.Env = append(os.Environ(), "MBS_SKELETON="+a.skeleton)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		e := strings.TrimSpace(stderr.String())
+		if i := strings.LastIndex(e, "\n"); i >= 0 {
+			e = e[i+1:]
+		}
+		return nil, fmt.Errorf("blocking preview failed: %v: %s", err, e)
+	}
+	var meta map[string]any
+	return meta, json.Unmarshal(out, &meta)
 }
 
 // ---- Blender ----

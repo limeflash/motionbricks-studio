@@ -220,3 +220,8 @@ button.chip.hidden { opacity: 0.38; text-decoration: line-through; }
 .ticks { position: relative; height: 0; }
 .mark-tag { position: absolute; top: 8px; transform: translateX(-50%); font-size: 10px; color: var(--accent2); }
 @media (max-width: 460px) { .bar .seg button { padding: 0 8px; } .stage { aspect-ratio: 4 / 5; max-height: 560px; } }
+.warns { padding: 10px 13px; border-radius: var(--r2); background: rgba(255, 181, 71, 0.07); border: 1px solid rgba(255, 181, 71, 0.3); font-size: 12.5px; }
+.warns b { color: var(--warn); font-weight: 650; }
+.warns ul { margin: 6px 0 0; padding-left: 18px; color: var(--fg); }
+.warns li + li { margin-top: 3px; }
+.chip.bad i { background: var(--warn); box-shadow: 0 0 8px rgba(255, 181, 71, 0.6); }

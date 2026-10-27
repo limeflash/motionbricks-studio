@@ -341,6 +341,42 @@ def write_bvh(path, poses):
         fh.write("\n".join(lines) + "\n")
 
 
+def checks(poses, meta):
+    """what visibly goes wrong on the SOMA take (model space), as short sentences for the card: keys the model missed,
+    feet under the floor, legs through the obstacle, palms that never reach their plant"""
+    out = []
+    miss = meta.get("key_max_miss_cm") or []
+    bad = [(f, m) for f, m in zip(meta.get("key_frames") or [], miss) if m > 10]
+    if bad:
+        out.append("keys missed: " + ", ".join(f"frame {f} by {m:.0f} cm" for f, m in bad) +
+                   " (the keys fight each other or the run's momentum; move or re-time them)")
+    W = [fk(p) for p in poses]
+    soles = [min(min(w[JI[s + "ToeEnd"], 1], w[JI[s + "Foot"], 1] - 0.068) for s in ("Left", "Right")) for w in W]
+    sunk = [f for f, y in enumerate(soles) if y < -0.03]
+    if sunk:
+        out.append(f"feet under the floor on {len(sunk)} frames (worst {100 * min(soles):.0f} cm, frame {int(np.argmin(soles))})")
+    ob = meta.get("obstacle")
+    if ob:
+        a, d, h, r = ob["near_z"], ob["depth"], ob["height"], 0.05
+        hit = []
+        for f, w in enumerate(W):
+            for s in ("Left", "Right"):
+                for n in ("Shin", "Foot", "ToeEnd"):
+                    x, y, z = w[JI[s + n], :3]
+                    if a - r < z < a + d + r and abs(x) < 0.9 and y < h + r:
+                        hit.append((f, s + n, h + r - y))
+        if hit:
+            f, j, pen = max(hit, key=lambda t: t[2])
+            out.append(f"legs through the obstacle on {len({h_[0] for h_ in hit})} frames (worst {j} by "
+                       f"{100 * pen:.0f} cm at frame {f})")
+    for hd in meta.get("hand_targets") or []:
+        gap = max(np.linalg.norm(W[f][JI[hd["joint"]], :3] - np.asarray(hd["pos"]))
+                  for f in range(hd["from"], min(hd["to"], len(W) - 1) + 1))
+        if gap > 0.05:
+            out.append(f"{hd['joint']} off its target by up to {100 * gap:.0f} cm (out of reach)")
+    return out
+
+
 def save_take(out_dir, world_poses, contacts, meta):
     """a take in out_dir: take.npz (model-space poses, contacts L heel, L toe, R heel, R toe), take.bvh, take.json"""
     os.makedirs(out_dir, exist_ok=True)
@@ -349,6 +385,7 @@ def save_take(out_dir, world_poses, contacts, meta):
     np.savez(os.path.join(out_dir, "take.npz"), poses=np.array(poses), contacts=fc)
     write_bvh(os.path.join(out_dir, "take.bvh"), poses)
     meta = dict(meta, frames=len(poses), seconds=round(len(poses) / FPS, 3), foot_contacts=fc.round(3).tolist())
+    meta["warnings"] = checks(poses, meta)
     with open(os.path.join(out_dir, "take.json"), "w") as fh:
         json.dump(meta, fh)
     return {k: v for k, v in meta.items() if k != "foot_contacts"}

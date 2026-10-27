@@ -13,6 +13,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from scipy.spatial.transform import Rotation as R  # noqa: E402
 
+import recipes as Rc  # noqa: E402
 import soma as S  # noqa: E402
 
 MODEL = "Kimodo-SOMA-RP-v1.2"
@@ -131,101 +132,20 @@ def solve(out_dir, n, keys, effectors=(), root_path=None, seed=0, steps=100, met
     return S.save_take(out_dir, poses, fc, meta)
 
 
-def hips_xz(p):
-    return S.fk(p)[0, [0, 2]]
+def run_recipe(out, r, seed=0, steps=100):
+    return solve(out, r["n"], r["keys"], r["effectors"], r["root_path"], seed, steps, r["meta"],
+                 (lambda poses: Rc.plant(poses, r["hands"])) if r["hands"] else None)
 
 
 def generate(out, n, keys, effectors=(), root_path="keys", seed=0, steps=100):
-    """the generic tool: keys [{frame, pose}], effectors [{joint, frame, position, pose?}], root_path "keys" | "none" |
-    [[frame, left, forward], ...]"""
-    built = [(int(k["frame"]), S.build(k["pose"])) for k in keys]
-    eff = []
-    for e in effectors:
-        f = int(e["frame"])
-        if e.get("pose") is not None:
-            p = S.build(e["pose"])
-        else:                                       # the nearest key's pose, as the body around the target
-            if not built:
-                raise ValueError("an effector needs a pose when there are no keys")
-            p = min(built, key=lambda k: abs(k[0] - f))[1].copy()
-        up, lo = S.CHAIN[e["joint"]]
-        S.two_bone(p, up, lo, e["joint"], e["position"], (0, -1, 0.3) if "Hand" in e["joint"] else (0, 0, 1))
-        eff.append((e["joint"], f, p))
-    rp = None
-    if isinstance(root_path, list):
-        rp = [(f, x, z) for f, x, z in root_path]
-    elif root_path == "keys" and len(built) > 1:
-        rp = [(f, *hips_xz(p)) for f, p in sorted(built, key=lambda k: k[0])]
-    return solve(out, n, built, eff, rp, seed, steps, {"op": "generate"})
+    return run_recipe(out, Rc.keyed(n, keys, effectors, root_path), seed, steps)
+
+
+def vault(out, seed=0, **kw):
+    return run_recipe(out, Rc.vault(**kw), seed)
 
 
 # ---- recipes ---------------------------------------------------------------------------------------------------------
-def at(pose, x=0.0, z=0.0, yaw=0.0, hips_y=None):
-    """a pose stood at (x, z) facing yaw (deg left of +Z), its hips raised to hips_y if given"""
-    p = S.place(pose, yaw=yaw)
-    p[0, 0] += x
-    p[0, 2] += z
-    if hips_y is not None:
-        p[0, 1] += hips_y - S.fk(p)[0, 1]
-    return p
-
-
-def vault(out, height=0.64, speed="run", approach=1.53, seed=0, lift=0.6, clear=0.8, plant_y=0.45):
-    """over an obstacle `height` m tall whose near face is `approach` m ahead: the run-up on the root path, our own keys
-    for the hands planted on the top, the knees driven up past the near edge (`lift`: hips over the top), the legs
-    tucked over it (`clear`), the landing crouch, and the run-out. Kimodo lets the palms drift up with the body, so
-    they are laid back on the top afterwards (plant_hands)"""
-    run = speed == "run"
-    v = 3.4 if run else 1.5                          # m/s on SOMA
-    h, a = float(height), float(approach)
-    depth = 0.35                                     # the obstacle's depth (m)
-    f_plant = max(12, int(round((a - 0.3) / v * 30)))
-    f_lift = f_plant + (4 if run else 6)
-    f_over = f_lift + (5 if run else 7)
-    f_land = f_over + (9 if run else 12)
-    f_end = f_land + 24
-
-    def hands(p, z):                                 # both hands planted on the top
-        for s, x in (("LeftHand", 0.18), ("RightHand", -0.18)):
-            S.two_bone(p, *S.CHAIN[s], s, (x, h + 0.04, z), (0.4 if x > 0 else -0.4, 0.3, -1))
-        return p
-
-    # the plant: low and pitched well forward, so the shoulders come over the hands and the top is in reach
-    reach = {"base": "ready", "legs": [40, 45, 35], "turns": {"Hips": [["x", 35]], "Spine2": [["x", 15]],
-                                                              "Chest": [["x", 20]], "Head": [["x", -30]]}}
-    plant = hands(at(S.build(reach), z=a - 0.38, hips_y=min(0.85, h * 0.5 + plant_y)), a + 0.06)
-    tuck = {"base": "ready", "legs": [85, 115, 10], "turns": {"Hips": [["x", 10]], "Chest": [["x", 18]],
-                                                               "Head": [["x", -22]]}}
-    up = hands(at(S.build(tuck), z=a - 0.12, hips_y=h + lift), a + 0.06)
-    over = hands(at(S.build(tuck), z=a + depth * 0.5 + 0.05, hips_y=h + clear), a + 0.1)
-    land = at(S.build("crouch_land"), z=a + depth + 0.75)
-    end = at(S.build("ready"), z=a + depth + 0.75 + (2.0 if run else 1.0))
-    keys = [(f_plant, plant), (f_lift, up), (f_over, over), (f_land, land), (f_end, end)]
-
-    def plant_hands(poses):
-        """the palms eased onto the top over 4 frames before the plant, held there to the lift key, eased off by the
-        over key (smoothstep weights: no snap); each arm re-solved around its own elbow, the hand keeping its turn.
-        Where the top is out of reach the arm reaches for it: the push-off"""
-        out = list(poses)
-        for f in range(f_plant - 4, min(f_over, len(poses) - 1) + 1):
-            u = (f - f_plant + 4) / 4 if f < f_plant else 1.0 if f <= f_lift else 1 - (f - f_lift) / (f_over - f_lift)
-            w = u * u * (3 - 2 * u)
-            p = out[f].copy()
-            for s, x in (("Left", 0.18), ("Right", -0.18)):
-                W = S.fk(p)
-                cur = W[S.JI[s + "Hand"], :3]
-                goal = cur + w * (np.array([W[0, 0] + x, h + 0.04, a + 0.06]) - cur)
-                mid = (W[S.JI[s + "Arm"], :3] + cur) / 2
-                S.two_bone(p, s + "Arm", s + "ForeArm", s + "Hand", goal, W[S.JI[s + "ForeArm"], :3] - mid)
-            out[f] = p
-        return out
-
-    rp = [(0, 0.0, 0.0)] + [(f, *hips_xz(p)) for f, p in keys]
-    meta = {"op": "vault", "height_m": h, "approach_m": a, "speed": speed, "takeoff_frame": f_plant,
-            "land_frame": f_land, "obstacle": {"near_z": a, "depth": depth, "height": h}}
-    return solve(out, f_end + 1, keys, (), rp, seed, 100, meta, plant_hands)
-
-
 LIMP = {"right": {"turns": {"Hips": [["z", -5]], "Spine1": [["z", -4]], "Spine2": [["z", -4], ["x", 4]],
                             "Chest": [["z", -4], ["x", 6]], "Head": [["z", 7]],
                             "RightLeg": [["x", 8], ["z", 4]], "RightFoot": [["x", -8]],
@@ -259,7 +179,7 @@ def locomotion(out, path, speed=1.5, style="none", style_pose=None, seed=0):
         rp.append((f, x, z))
     d0, d1 = pts[1] - pts[0], pts[-1] - pts[-2]
     yaw0, yaw1 = math.degrees(math.atan2(d0[0], d0[1])), math.degrees(math.atan2(d1[0], d1[1]))
-    keys = [(0, at(S.build("stand"), yaw=yaw0)), (n - 1, at(S.build("stand"), *pts[-1], yaw=yaw1))]
+    keys = [(0, Rc.at(S.build("stand"), yaw=yaw0)), (n - 1, Rc.at(S.build("stand"), *pts[-1], yaw=yaw1))]
     spec = style_pose if style_pose is not None else LIMP.get(style.replace("limp_", "")) if style != "none" else None
     if spec is not None:
         stride = int(round(30 * (1.1 if style != "none" else 1.0)))          # a slow, uneven gait: ~1.1 s a stride
@@ -268,7 +188,7 @@ def locomotion(out, path, speed=1.5, style="none", style_pose=None, seed=0):
             s1 = np.array(rp[min(f + 2, n - 1)][1:])
             d = s1 - s0
             yaw = math.degrees(math.atan2(d[0], d[1])) if np.linalg.norm(d) > 1e-4 else yaw1
-            keys.append((f, at(S.build(spec), *rp[f][1:], yaw=yaw)))
+            keys.append((f, Rc.at(S.build(spec), *rp[f][1:], yaw=yaw)))
     meta = {"op": "locomotion", "length_m": round(float(cum[-1]), 3), "speed_ms": float(speed), "style": style}
     return solve(out, n, keys, (), rp, seed, 100, meta)
 

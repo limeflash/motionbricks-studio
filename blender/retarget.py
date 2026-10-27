@@ -79,6 +79,84 @@ def contacts(A, m, t0):
 LOOSE = {"ShoulderL": 2, "ShoulderR": 2, "ElbowL": 3, "ElbowR": 3, "WristL": 4, "WristR": 4}
 
 
+def to_freak(A, rig, p):
+    """a SOMA model-space point (x left, y up, z forward, m; the take's hips start over the origin) on the freak:
+    Blender axes, studs, by the retarget's own scale"""
+    k = rig.leg / A.bvh("take").leg * 13.957 / 0.857
+    return np.array([rig.pos0[0][0] - p[0] * k, rig.pos0[0][1] + p[2] * k, p[1] * k])
+
+
+WRIST_OVER_PALM = 0.5                               # studs: SKULL's wrist joint above a palm laid flat
+
+
+def arm_hinge_to(A, m, rig, side, W):
+    """arm_hinge for one arm onto given wrist points W [n, 3] (the elbow toward the motion's own), as the probe's
+    b_mb_skull.arm_hinge_to"""
+    BI = A.BI
+    P = rig.joint_world(m)
+    loc = m.local()
+    sh, el, wr = BI["Shoulder" + side], BI["Elbow" + side], BI["Wrist" + side]
+    u0, f0 = rig.pos0[el] - rig.pos0[sh], rig.pos0[wr] - rig.pos0[el]
+    S_, E = P[:, sh], P[:, el]
+    q_w = m.rot[:, BI["Waist"]]
+    pe = E - (S_ + W) / 2
+    pe = pe / np.maximum(np.linalg.norm(pe, axis=1, keepdims=True), 1e-6)
+    q_up, th, _ = hinge(A, S_, W, u0, f0, q_w, 1.0, pe, 1.0)
+    loc[:, sh] = A.qmul(A.qinv(q_w), q_up)
+    loc[:, el] = A.qaxis(X_, th)
+    m.set_local(loc)
+    return m
+
+
+def plant_hands(A, m, rig):
+    """the palm plants of the recipe (META hand_targets) laid on the freak: the wrist path offset onto the plant, eased
+    in and out (smoothstep), the arm re-solved on its hinges. Rotations alone leave SKULL's hands short of the box"""
+    for hd in META.get("hand_targets") or []:
+        side = "L" if hd["joint"].startswith("Left") else "R"
+        tgt = to_freak(A, rig, hd["pos"]) + np.array([0.0, 0.0, WRIST_OVER_PALM])
+        W = rig.joint_world(m)[:, A.BI["Wrist" + side]].copy()
+        n = len(W)
+        for f in range(max(hd["in"], 0), min(hd["out"], n - 1) + 1):
+            if f < hd["from"]:
+                u = (f - hd["in"]) / max(hd["from"] - hd["in"], 1)
+            elif f <= hd["to"]:
+                u = 1.0
+            else:
+                u = 1 - (f - hd["to"]) / max(hd["out"] - hd["to"], 1)
+            W[f] += (u * u * (3 - 2 * u)) * (tgt - W[f])
+        arm_hinge_to(A, m, rig, side, W)
+    return m
+
+
+def freak_checks(A, rig, m):
+    """what goes wrong on the freak itself: its knees and ankles (limbs ~0.5 stud thick) through the obstacle, a wrist
+    off its plant"""
+    out = []
+    P = rig.joint_world(m)
+    ob = META.get("obstacle")
+    if ob:
+        near = to_freak(A, rig, [0.0, ob["height"], ob["near_z"]])
+        far = to_freak(A, rig, [0.0, ob["height"], ob["near_z"] + ob["depth"]])
+        r, hits = 0.5, []                           # knees by their thickness; feet by their soles (the ankle's rest height)
+        for f in range(len(P)):
+            for j in ("KneeR", "KneeL", "AnkleR", "AnkleL"):
+                x, y, z = P[f, A.BI[j]]
+                low = z - (rig.pos0[A.BI[j]][2] if j.startswith("Ankle") else r)
+                if near[1] - r < y < far[1] + r and abs(x - near[0]) < 3.5 and low < near[2]:
+                    hits.append((f, j.replace("Ankle", "Foot"), near[2] - low))
+        if hits:
+            f, j, pen = max(hits, key=lambda t: t[2])
+            out.append("on the freak: %s through the obstacle on %d frames (worst %s by %.1f studs at frame %d)"
+                       % ("legs", len({h[0] for h in hits}), j, pen, f))
+    for hd in META.get("hand_targets") or []:
+        side = "L" if hd["joint"].startswith("Left") else "R"
+        tgt = to_freak(A, rig, hd["pos"]) + np.array([0.0, 0.0, WRIST_OVER_PALM])
+        gap = max(np.linalg.norm(P[f, A.BI["Wrist" + side]] - tgt) for f in range(hd["from"], min(hd["to"], len(P) - 1) + 1))
+        if gap > 0.4:
+            out.append("on the freak: %s misses its plant by up to %.1f studs" % (hd["joint"], gap))
+    return out
+
+
 def clip_fn(A, preset):
     def f(rig):
         m = contacts(A, A.face_pose(A.retarget("take", rig, 1 / FPS, None)), 1 / FPS)
@@ -139,7 +217,10 @@ def main():
     elif JOB["travel"] == "strip":
         AE.STRIP = tuple(AE.STRIP) + (name,)
     m = leg_hinge(A, A.build_clip(name, clip_fn(A, JOB["preset"]), rig), rig)
+    if JOB["preset"] != "raw":
+        plant_hands(A, m, rig)                      # after anim's arm clearance, which would push a planted hand off
     out = write_clip(A, AE, rig, name, m, JOB["out"])
+    out["checks"] = freak_checks(A, rig, m)
     if JOB.get("marks"):
         out["marks"] = dict(out.get("marks") or {}, **JOB["marks"])
     out["source"] = {k: META.get(k) for k in ("op", "engine", "frames") if k in META}

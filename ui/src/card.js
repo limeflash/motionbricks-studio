@@ -75,7 +75,7 @@ async function ask(prompt) {
 }
 
 function header(title, sub, status) {
-  const [label, cls] = { done: ["Ready", "ok"], running: ["Working", "run"], failed: ["Failed", "bad"] }[status] || [];
+  const [label, cls] = { done: ["Ready", "ok"], warn: ["Check", "quote"], running: ["Working", "run"], failed: ["Failed", "bad"] }[status] || [];
   return h("div", { class: "head" },
     h("div", { class: "mark", html: ICON.logo, "aria-hidden": "true" }),
     h("div", { class: "titles" }, h("div", { class: "title" }, title || "MotionBricks Studio"), sub && h("div", { class: "sub" }, sub)),
@@ -138,9 +138,11 @@ function controls(p, clip) {
   const R = h("i", {}, "R");
   const L = h("i", {}, "L");
   const marks = Object.entries(clip.marks || {});
+  const keys = clip.keys || [];
   p.onframe = (f) => {
     range.value = f;
-    const tag = marks.find(([, s]) => Math.abs(s * clip.fps - f) < 0.5)?.[0];
+    const k = keys.indexOf(f);
+    const tag = k >= 0 ? `K${k + 1}` : marks.find(([, s]) => Math.abs(s * clip.fps - f) < 0.5)?.[0];
     fr.textContent = `${f + 1}/${clip.frames}${tag ? " " + tag : ""}`;
     const c = clip.contact?.[f] || 0;
     R.className = c & 1 ? "on" : "";
@@ -163,6 +165,28 @@ function controls(p, clip) {
   return h("div", { class: "bar glass" }, playBtn, range, fr, h("span", { class: "feet", title: "Planted feet" }, L, R),
     seg([[0.25, "¼×"], [0.5, "½×"], [1, "1×"]], () => p.speed, (v) => (p.speed = v)),
     seg([["side", "Side"], ["3/4", "¾"], ["front", "Front"]], () => view, (v) => p.view((view = v))));
+}
+
+// the key poses: one button each (its frame, and how far the model's motion came out from it), so every pose the
+// caller set can be looked at on the freak
+function keysBlock(meta) {
+  const clip = meta.clip || {};
+  if (!clip.keys?.length || !player) return null;
+  const miss = clip.key_miss_cm || [];
+  return h("div", {}, h("div", { class: "label" }, "Key poses", h("em", {}, "tap to look at a pose on the freak")),
+    h("div", { class: "chips" }, ...clip.keys.map((f, i) => {
+      const m = miss[i];
+      return h("button", {
+        class: `chip${m > 10 ? " bad" : " on"}`, title: m != null ? `missed by ${m} cm` : `frame ${f + 1}`,
+        onclick: () => { player.playing = false; player.seek(Math.min(f, clip.frames - 1)); },
+      }, h("i"), `K${i + 1} · ${f + 1}` + (m != null ? ` · ${Math.round(m)} cm` : ""));
+    })));
+}
+
+function warningsBlock(ws) {
+  if (!ws?.length) return null;
+  return h("div", { class: "warns", role: "status" }, h("b", {}, "Something looks wrong"),
+    h("ul", {}, ...ws.map((w) => h("li", {}, w))));
 }
 
 function kvs(settings) {
@@ -202,7 +226,8 @@ function render() {
     const text = (r.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
     if (!d || d.kind === "error") view = [header(d?.title || "MotionBricks Studio", "", "failed"), alertBlock(d?.error || text), footer()];
     else view = [header(d.title, d.summary, r.isError ? "failed" : d.status), r.isError ? alertBlock(d.error) : null,
-      meta.clip ? stage(meta) : null, kvs(d.settings || []), facts(d, meta), nextBlock(d.next), footer()];
+      meta.clip ? stage(meta) : null, warningsBlock(d.warnings), meta.clip ? keysBlock(meta) : null, kvs(d.settings || []),
+      facts(d, meta), nextBlock(d.next), footer()];
   }
   root.replaceChildren(...view.filter(Boolean));
 }
