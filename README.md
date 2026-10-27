@@ -66,6 +66,11 @@ Paths (environment overrides): `MBS_MOTIONBRICKS` `H:\tools\motionbricks`, `MBS_
 
 ## State (2026-10-27)
 - Done: the knockback end to end (generated from our poses, played in the card, exported and checked).
-- Drafts, not judged by the owner: the vault (SKULL's shins pass through the box at the top; the keys need more height),
-  the walk along a path, the limp (its pose's arms were fixed after the first test and need a re-run), keyed motion.
+- The limp (`limp_right`) reads in numbers: the bad knee bends about half as much as the good one (mean 28° vs 47°),
+  it stands 41% of the time vs 50%, the trunk leans 6° over the good leg.
+- The vault: the legs clear the box except the knees grazing the near top edge for a frame at the plant; the palms are
+  laid on the top after generation (Kimodo lets them drift up; raising its constraint guidance only broke the poses).
+  On SKULL the hands still do not reach the box: the retarget carries arm rotations, not hand positions. Next: lay
+  SKULL's hand(s) on the box in `blender/retarget.py`, as the probe's bonebreaker did with `wrist_keys`.
+- Drafts, not judged by the owner: the walk along a path, keyed motion.
 - Only SKULL heavy is wired up for the retarget; other freaks and forms need their rigs in `blender/retarget.py`.
