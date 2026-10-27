@@ -35,6 +35,15 @@ target (on SOMA, `soma.checks`); and on the freak itself (`blender/retarget.py`)
 arms far off the body, the hips pulled down by the leg solve (a planted foot the leg can't reach: the freak kneels).
 The card also shows each key pose as a button (frame, and how far the motion came out from it).
 
+## The pose editor
+A clip made from key poses (`motion_vault`, `motion_from_keys`, and runs of the editor itself) saves them as `keys.json`
+next to its take, and its card gets an "Edit the poses" button: `http://127.0.0.1:5191/edit/<id>`. The keys stand along
+the hips' path on the SOMA body (Kimodo's own skin, `somaskel77/skin_standard.npz`; built once into
+`soma_skin.json`): drag the hands, feet and hips like IK controls (the feet stay planted while the body moves), turn
+any joint with the rings, hide keys or show only the picked ones. "Blocking on the freak" and "Kimodo" run the clip
+again through the changed poses into `<name>_edit-…` and open its card below. Only the poses change: the frames, the
+hips' path (it follows the keys) and the marks stay. The page is served by whichever plugin instance holds the port.
+
 ## How a clip is made
 1. A worker generates a SOMA take (77 joints, 30 fps): `python/mb_worker.py` (MotionBricks' motion player on our
    poses, ported from the probe's `mb_generate.py`) or `python/kimodo_worker.py` (Kimodo with full-body, end-effector

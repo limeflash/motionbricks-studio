@@ -6,6 +6,8 @@ A recipe returns {"n", "keys": [(frame, pose)], "effectors", "root_path": [(fram
 "hands" are plants [{"joint", "in", "from", "to", "out", "pos"}]: eased on from `in`, held `from`..`to`, eased off by `out`. They are
 laid on after generation (Kimodo lets a palm drift with the body) and again on the freak by blender/retarget.py (its
 arms follow rotations, not positions)."""
+import json
+
 import numpy as np
 
 import soma as S
@@ -221,6 +223,16 @@ def hurdle(height=0.64, speed="run", approach=2.55):
             "takeoff_frame": f_off, "land_frame": f_land, "obstacle": {"near_z": a, "depth": depth, "height": h}}
     return {"n": f_end + 1, "keys": keys, "effectors": [], "hands": [], "meta": meta,
             "root_path": [(f, *hips_xz(p)) for f, p in keys]}
+
+
+def edited(file):
+    """a take's keys.json with its poses changed in the pose editor; the hips' ground path follows the keys"""
+    with open(file) as fh:
+        d = json.load(fh)
+    keys = sorted(((int(k["frame"]), np.asarray(k["pose"], float)) for k in d["keys"]), key=lambda k: k[0])
+    eff = [(e["joint"], int(e["frame"]), np.asarray(e["pose"], float)) for e in d["effectors"]]
+    return {"n": int(d["n"]), "keys": keys, "effectors": eff, "hands": d["hands"], "meta": d["meta"],
+            "root_path": [(f, *hips_xz(p)) for f, p in keys] if len(keys) > 1 else None}
 
 
 def vault(height=0.64, speed="run", approach=2.55, hand="left", style="hurdle"):

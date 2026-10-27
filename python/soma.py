@@ -391,6 +391,15 @@ def save_take(out_dir, world_poses, contacts, meta):
     return {k: v for k, v in meta.items() if k != "foot_contacts"}
 
 
+def save_keys(out_dir, r):
+    """a recipe's key poses next to its take (keys.json, model space, [77, 7] each) for the pose editor"""
+    rows = lambda p: np.round(p, 5).tolist()
+    with open(os.path.join(out_dir, "keys.json"), "w") as fh:
+        json.dump({"n": int(r["n"]), "names": NAMES, "parents": PAR, "meta": r["meta"], "hands": r["hands"],
+                   "keys": [{"frame": int(f), "pose": rows(p)} for f, p in r["keys"]],
+                   "effectors": [{"joint": j, "frame": int(f), "pose": rows(p)} for j, f, p in r["effectors"]]}, fh)
+
+
 def load_take(take_dir):
     """a saved take back as world poses (for a transition's context) and contacts"""
     z = np.load(os.path.join(take_dir, "take.npz"))

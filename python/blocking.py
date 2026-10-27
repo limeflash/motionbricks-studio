@@ -58,7 +58,9 @@ def main():
     r = getattr(Rc, sys.argv[1])(**args)
     poses = Rc.plant(interpolate(r["n"], r["keys"], r["root_path"]), r["hands"])
     meta = dict(r["meta"], engine="blocking: keys interpolated, no model", key_frames=[int(f) for f, _ in r["keys"]])
-    print(json.dumps(S.save_take(out_dir, [S.to_world(p) for p in poses], contacts(poses), meta)))
+    take = S.save_take(out_dir, [S.to_world(p) for p in poses], contacts(poses), meta)
+    S.save_keys(out_dir, r)
+    print(json.dumps(take))
 
 
 if __name__ == "__main__":

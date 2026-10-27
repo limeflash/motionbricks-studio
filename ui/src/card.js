@@ -178,7 +178,11 @@ function keysBlock(meta) {
   const clip = meta.clip || {};
   if (!clip.keys?.length || !player) return null;
   const miss = clip.key_miss_cm || [];
+  const edit = meta.edit && h("button", { class: "chip on", title: meta.edit,
+    onclick: () => (app ? app.openLink({ url: meta.edit }).catch(() => copy(meta.edit, "Copied the editor's link")) : window.open(meta.edit)) },
+  "Edit the poses ↗");
   return h("div", {}, h("div", { class: "label" }, "Key poses", h("em", {}, "tap to look at a pose on the freak")),
+    edit && h("div", { class: "chips", style: "margin-bottom:6px" }, edit),
     h("div", { class: "chips" }, ...clip.keys.map((f, i) => {
       const m = miss[i];
       return h("button", {

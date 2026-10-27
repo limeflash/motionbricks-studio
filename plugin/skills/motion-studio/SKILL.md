@@ -45,6 +45,9 @@ by position (`ik` targets, like IK controls) rather than by joint angles: picked
 whatever is below it. Remember the freak's proportions: SKULL's shoulders sit high over a big torso and his feet are tall,
 so he needs more lean to reach low and more height to clear an obstacle than the SOMA body.
 
+The owner can set poses by hand: the card's "Edit the poses" opens the pose editor (the keys on the SOMA body, IK
+handles, rings), whose runs make `<name>_edit` clips; `motion_show` lists them.
+
 ## After a generation
 If the card says "Something looks wrong", tell the owner what and what you will change; don't present it as done.
 The card plays the clip on the freak (side / ¾ / front, ¼× to 1×, the planted feet lit). Keep your reply short: the card

@@ -133,8 +133,10 @@ def solve(out_dir, n, keys, effectors=(), root_path=None, seed=0, steps=100, met
 
 
 def run_recipe(out, r, seed=0, steps=100):
-    return solve(out, r["n"], r["keys"], r["effectors"], r["root_path"], seed, steps, r["meta"],
+    take = solve(out, r["n"], r["keys"], r["effectors"], r["root_path"], seed, steps, r["meta"],
                  (lambda poses: Rc.plant(poses, r["hands"])) if r["hands"] else None)
+    S.save_keys(out, r)
+    return take
 
 
 def generate(out, n, keys, effectors=(), root_path="keys", seed=0, steps=100):
@@ -143,6 +145,10 @@ def generate(out, n, keys, effectors=(), root_path="keys", seed=0, steps=100):
 
 def vault(out, seed=0, **kw):
     return run_recipe(out, Rc.vault(**kw), seed)
+
+
+def edited(out, file, seed=0, steps=100):
+    return run_recipe(out, Rc.edited(file), seed, steps)
 
 
 # ---- recipes ---------------------------------------------------------------------------------------------------------
@@ -193,5 +199,5 @@ def locomotion(out, path, speed=1.5, style="none", style_pose=None, seed=0):
     return solve(out, n, keys, (), rp, seed, 100, meta)
 
 
-proto.serve({"generate": generate, "vault": vault, "locomotion": locomotion},
+proto.serve({"generate": generate, "vault": vault, "edited": edited, "locomotion": locomotion},
             {"worker": "kimodo", "model": MODEL, "load_s": LOAD_S, "skeleton": model.skeleton.nbjoints})

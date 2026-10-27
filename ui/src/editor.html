@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pose editor</title>
+    <style>
+/*CSS*/
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>Pose editor</b> <span id="clip"></span>
+      <span class="hint">Click a pose to pick it (Ctrl-click to pick several). Drag the orange handles (hands, feet) and
+        the yellow one (hips) like IK controls; click a white dot to turn that joint. G move · R turn · Ctrl+Z undo ·
+        H hide · O only the picked · A all · F frame</span>
+    </header>
+    <div id="view"></div>
+    <section class="panel">
+      <div class="row"><span id="keys" class="row"></span>
+        <button id="only">Only the picked (O)</button><button id="all">Show all (A)</button><button id="frame">Frame (F)</button></div>
+      <div class="row">
+        <div class="seg"><button id="move">Move (G)</button><button id="turn">Turn (R)</button></div>
+        <button id="undo">Undo</button>
+        <button id="reset">Reset this key</button>
+        <span id="sel" class="muted"></span>
+      </div>
+      <div class="row">
+        <button id="block" class="primary">Blocking on the freak</button>
+        <button id="kimodo">Kimodo</button>
+        <label class="muted"><input type="checkbox" id="gpuok" /> Roblox isn't in Play and no Blender render runs
+          (skip the GPU check)</label>
+        <span id="status" class="muted"></span>
+      </div>
+    </section>
+    <section id="result"></section>
+    <script>
+/*JS*/
+    </script>
+  </body>
+</html>

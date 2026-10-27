@@ -37,6 +37,11 @@ Every generation returns a clip id and a card that plays the clip on the freak; 
 //go:embed ui/dist/card.html
 var cardHTML string
 
+// The pose editor page, served by the preview server (preview.go).
+//
+//go:embed ui/dist/editor.html
+var editorHTML string
+
 const appMIME = "text/html;profile=mcp-app"
 
 type message struct {

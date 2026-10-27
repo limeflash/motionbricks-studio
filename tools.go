@@ -676,6 +676,9 @@ func (a *app) clipReply(r *record) (reply, error) {
 		meta["rig"] = map[string]any{"data": base64.StdEncoding.EncodeToString(glb), "name": r.Freak + " " + r.Form}
 	}
 	meta["preview"] = a.previewURL(r.ID)
+	if _, err := os.Stat(a.keysPath(r.ID)); err == nil {
+		meta["edit"] = a.editURL(r.ID)
+	}
 	if ob, ok := r.Take["obstacle"].(map[string]any); ok && c.Scale > 0 { // the vault's box, in studs from the start
 		n := func(k string) float64 { f, _ := ob[k].(float64); return f * c.Scale }
 		meta["props"] = []map[string]any{{"kind": "box", "forward": n("near_z"), "depth": n("depth"), "height": n("height"), "width": 7.0}}
