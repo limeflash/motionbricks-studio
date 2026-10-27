@@ -30,7 +30,10 @@ no model and no GPU (`python/blocking.py`, a few seconds), to judge the poses be
 ## Checks: the card says what looks wrong
 Every clip is checked and the card lists what fails (a yellow "Check" pill), and the tool text tells the calling Claude to
 pass it on: keys the model missed by over 10 cm, feet under the floor, legs through the obstacle, a hand or foot off its
-target (on SOMA, `soma.checks`); and on the freak itself (`blender/retarget.py`): knees and soles through the obstacle
+target, a flight that breaks gravity (with both feet off and no hand planted for T s the hips must rise g T²/8 over the
+line between take-off and landing: more hovers, less floats down), joints past what a body can do (a knee past 155° or an
+elbow past 155°, either bent backwards or sideways off its hinge; a hip flexed past 145°, stretched back past 35°, spread
+past 75° or crossed past 30°; calibrated so Kimodo's own leaps pass) (on SOMA, `soma.checks`); and on the freak itself (`blender/retarget.py`): knees and soles through the obstacle
 (SKULL's feet are tall: his ankle sits 0.89 stud over the sole), a hand off its plant, anim's arm clearance pushing the
 arms far off the body, the hips pulled down by the leg solve (a planted foot the leg can't reach: the freak kneels).
 The card also shows each key pose as a button (frame, and how far the motion came out from it).
@@ -87,8 +90,10 @@ Paths (environment overrides): `MBS_MOTIONBRICKS` `H:\tools\motionbricks`, `MBS_
 - The limp (`limp_right`) reads in numbers: the bad knee bends about half as much as the good one (mean 28° vs 47°),
   it stands 41% of the time vs 50%, the trunk leans 6° over the good leg.
 - The vault (`python/recipes.py`): by default a running jump like the probe's approved MotionBricks jump, blocked from our
-  own poses with the feet placed like IK controls (run-in strides every 10 frames, take-off, knee attack, lead leg
-  over, trail leg through, landing, a slowing step, the stop);
+  own poses with the feet placed like IK controls: the run-in as real strides (contact, mid-stance, push-off with the
+  foot planted, 0.13 s in the air between), the take-off, then a ballistic flight (the hips on a gravity arc whose
+  time comes from the height they must reach) through the knee attack, the lead leg long over the top with the trail
+  knee folding out, the lead foot reaching down as the trail knee comes round, the landing; a slowing step, the stop;
   it clears the box on SOMA and on SKULL. Kimodo through those keys makes a natural leap but strays 20-25 cm from the
   airborne keys (reported on the card). `style=hand` is a one-hand tuck vault for taller obstacles: the palm is laid on the
   top after generation on SOMA and again on SKULL (the retarget carries arm rotations, not hand positions).

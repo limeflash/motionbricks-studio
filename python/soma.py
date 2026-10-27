@@ -341,9 +341,73 @@ def write_bvh(path, poses):
         fh.write("\n".join(lines) + "\n")
 
 
+# hinges as a body has them: the joint, the bone it turns on (whose frame carries the hinge axis, as in the T-pose:
+# knees flex about the body's left, elbows forward) and how far it bends at most (deg)
+HINGES = {"left knee": ("LeftLeg", "LeftShin", "LeftFoot", (1, 0, 0), 155),
+          "right knee": ("RightLeg", "RightShin", "RightFoot", (1, 0, 0), 155),
+          "left elbow": ("LeftArm", "LeftForeArm", "LeftHand", (0, -1, 0), 155),
+          "right elbow": ("RightArm", "RightForeArm", "RightHand", (0, 1, 0), 155)}
+
+
+def anatomy(W, ref):
+    """what one frame (fk rows) asks of the joints that a body can't do: a knee or elbow bent too far, backwards or
+    sideways off its hinge; a hip flexed past 145°, stretched back past 35°, spread past 75° or crossed past 30°
+    (measured on Kimodo's own leaps, which reach 142° and 70°). An elbow's hinge is only read once it is well bent:
+    the forearm's twist and carrying angle tilt it a little"""
+    out = []
+    for name, (up, mid, end, axis, most) in HINGES.items():
+        t, s = W[JI[mid], :3] - W[JI[up], :3], W[JI[end], :3] - W[JI[mid], :3]
+        bend = np.degrees(np.arccos(np.clip(np.dot(t, s) / np.linalg.norm(t) / np.linalg.norm(s), -1, 1)))
+        if bend > most:
+            out.append((name, f"bent {bend:.0f}° (a body stops at {most}°)"))
+        elif bend > (25 if "knee" in name else 45):
+            hinge = (R.from_quat(W[JI[up], 3:]) * R.from_quat(ref[JI[up], 3:]).inv()).apply(axis)
+            off = np.degrees(np.arccos(np.clip(np.dot(np.cross(t, s) / np.linalg.norm(np.cross(t, s)), hinge), -1, 1)))
+            if off > 50:
+                out.append((name, "bends backwards" if off > 130 else f"bends sideways ({off:.0f}° off its hinge)"))
+    pelvis = R.from_quat(W[0, 3:]) * R.from_quat(ref[0, 3:]).inv()
+    for side, sx in (("left", 1), ("right", -1)):
+        n = side.capitalize()
+        d = pelvis.inv().apply(W[JI[n + "Shin"], :3] - W[JI[n + "Leg"], :3])
+        d /= np.linalg.norm(d)
+        flex, spread = np.degrees(np.arctan2(d[2], -d[1])), np.degrees(np.arcsin(np.clip(d[0] * sx, -1, 1)))
+        for bad, what in ((flex > 145, f"flexed {flex:.0f}°"), (flex < -35, f"stretched back {-flex:.0f}°"),
+                          (spread > 75, f"spread {spread:.0f}°"), (spread < -30, f"crossed {-spread:.0f}°")):
+            if bad:
+                out.append((side + " hip", what))
+    return out
+
+
+def flights(W, soles, held=()):
+    """each stretch with both feet off the floor and no hand planted (`held` frames) is ballistic: from the last foot
+    off to the first foot down (T s) the hips rise g T^2 / 8 over the line between them, give or take the limbs' swing.
+    Higher hovers, lower floats down"""
+    soles = [0.0 if f in held else y for f, y in enumerate(soles)]
+    out, f = [], 0
+    while f < len(W):
+        if soles[f] <= 0.05:
+            f += 1
+            continue
+        e = f
+        while e < len(W) and soles[e] > 0.05:
+            e += 1
+        if f > 0 and e < len(W) and e - f >= 4:
+            T = (e - f + 1) / FPS
+            y = np.array([W[k][0, 1] for k in range(f - 1, e + 1)])
+            rise = (y - np.linspace(y[0], y[-1], len(y))).max()
+            want = 9.81 * T * T / 8
+            if abs(rise - want) > max(0.06, 0.35 * want):
+                out.append(f"frames {f}-{e - 1} are not a real flight: in {T:.2f} s in the air the hips rise "
+                           f"{100 * rise:.0f} cm where gravity gives {100 * want:.0f} cm (the body "
+                           f"{'hovers' if rise > want else 'floats down'}; re-time the keys or change the jump's height)")
+        f = e
+    return out
+
+
 def checks(poses, meta):
     """what visibly goes wrong on the SOMA take (model space), as short sentences for the card: keys the model missed,
-    feet under the floor, legs through the obstacle, palms that never reach their plant"""
+    feet under the floor, flights that break gravity, joints bent past what a body can do, legs through the obstacle,
+    palms that never reach their plant"""
     out = []
     miss = meta.get("key_max_miss_cm") or []
     bad = [(f, m) for f, m in zip(meta.get("key_frames") or [], miss) if m > 10]
@@ -355,6 +419,13 @@ def checks(poses, meta):
     sunk = [f for f, y in enumerate(soles) if y < -0.03]
     if sunk:
         out.append(f"feet under the floor on {len(sunk)} frames (worst {100 * min(soles):.0f} cm, frame {int(np.argmin(soles))})")
+    out += flights(W, soles, {f for hd in meta.get("hand_targets") or [] for f in range(hd["from"], hd["to"] + 1)})
+    ref, seen = fk(REF), {}
+    for f, w in enumerate(W):
+        for joint, what in anatomy(w, ref):
+            seen.setdefault((joint, what.split(" ")[0]), (f, what, []))[2].append(f)
+    for (joint, _), (f, what, fs) in seen.items():
+        out.append(f"{joint} {what} on {len(fs)} frames (from frame {f}): not something a body can do")
     ob = meta.get("obstacle")
     if ob:
         a, d, h, r = ob["near_z"], ob["depth"], ob["height"], 0.05
