@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "motionbricks-studio": {
+      "command": "G:/projects/motionbricks-studio/motionbricks-studio.exe"
+    }
+  }
+}

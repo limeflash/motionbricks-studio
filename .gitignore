@@ -1,0 +1,5 @@
+*.exe
+*.exe~
+/ui/node_modules/
+__pycache__/
+/.serena/

@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Card test host</title>
+    <style>
+      body { margin: 0; font: 13px system-ui, sans-serif; background: #f4f3ef; color: #222; }
+      body[data-theme="dark"] { background: #1a1a19; color: #eee; }
+      .bar { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 16px; position: sticky; top: 0; background: inherit; z-index: 2; border-bottom: 1px solid #8883; }
+      button { padding: 6px 10px; border-radius: 8px; border: 1px solid #8885; background: #fff8; cursor: pointer; color: inherit; }
+      #stage { padding: 20px 16px; }
+      iframe { border: 1px solid #8884; border-radius: 14px; background: transparent; height: 200px; display: block; }
+      #log { margin: 0 16px 20px; font: 11px ui-monospace, monospace; white-space: pre-wrap; opacity: 0.75; max-height: 160px; overflow: auto; }
+    </style>
+  </head>
+  <body data-theme="light">
+    <div class="bar"><span id="scenarios" style="display: contents"></span><button id="theme">Theme</button><button id="width">Width</button></div>
+    <div id="stage"></div>
+    <pre id="log"></pre>
+    <script src="/host.js"></script>
+  </body>
+</html>

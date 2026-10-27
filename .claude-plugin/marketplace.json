@@ -1,0 +1,14 @@
+{
+  "name": "motionbricks-studio",
+  "description": "Build a Freak's offline motion tools (MotionBricks + Kimodo).",
+  "owner": {
+    "name": "limeflash"
+  },
+  "plugins": [
+    {
+      "name": "motionbricks-studio",
+      "source": "./plugin",
+      "description": "Offline character motion for Build a Freak with NVIDIA MotionBricks + Kimodo: reactions, knock-backs, vaults, transitions, a limp, retargeted onto a freak, previewed in a card and exported as the game's clip JSON."
+    }
+  ]
+}

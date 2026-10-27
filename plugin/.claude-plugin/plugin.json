@@ -1,0 +1,7 @@
+{
+  "name": "motionbricks-studio",
+  "version": "0.1.0",
+  "description": "Offline character motion for Build a Freak with NVIDIA MotionBricks + Kimodo: reactions, knock-backs, vaults, transitions, a limp, retargeted onto a freak, previewed in a card and exported as the game's clip JSON.",
+  "author": { "name": "limeflash" },
+  "license": "UNLICENSED"
+}
