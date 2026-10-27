@@ -132,11 +132,47 @@ export class Player {
     this.controls.update();
   }
 
-  show(f) {
+  // the key poses standing along the path, as in MotionBricks' own demo: a flat-coloured copy of the freak at each key
+  // (the first green, the rest blue), a ring on the floor under each and the hips' track in yellow
+  setKeys(keys) {
+    this.keyGroup?.removeFromParent();
+    const g = (this.keyGroup = new THREE.Group());
     const c = this.clip;
+    const floor = (o) => this.hipsAt(o).setY(0.02);
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(c.off.map(floor)),
+      new THREE.LineBasicMaterial({ color: 0xf5c542 })));
+    const rings = [0x3ddc84, 0x4aa8ff].map((color) => new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }));
+    this.ghosts = keys.map((f, i) => {
+      f = Math.min(f, c.frames - 1);
+      const ghost = this.model.clone();
+      const mat = new THREE.MeshStandardMaterial({ color: rings[i ? 1 : 0].color, roughness: 0.7, transparent: true });
+      ghost.traverse((o) => o.isMesh && (o.material = mat));
+      ghost.userData.mat = mat;
+      this.pose(c.joints.map((n) => ghost.getObjectByName(n)), f);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.25, 40), rings[i ? 1 : 0]);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.copy(floor(c.off[f]));
+      g.add(ghost, ring);
+      return ghost;
+    });
+    this.scene.add(g);
+    this.focusKey(-1);
+  }
+
+  // one key pose solid and the others faint (they crowd where the keys come fast); -1 shows them all alike
+  focusKey(k) {
+    this.ghosts?.forEach((g, i) => (g.userData.mat.opacity = k < 0 ? 0.75 : i === k ? 0.95 : 0.18));
+  }
+
+  pose(nodes, f) {
+    const c = this.clip;
+    c.q[f].forEach(([w, x, y, z], i) => nodes[i].quaternion.set(x, z, -y, w));
+    nodes[0].position.copy(this.hipsAt(c.off[f]));
+  }
+
+  show(f) {
     this.frame = f;
-    c.q[f].forEach(([w, x, y, z], i) => this.nodes[i].quaternion.set(x, z, -y, w));
-    this.nodes[0].position.copy(this.hipsAt(c.off[f]));
+    this.pose(this.nodes, f);
     this.onframe?.(f);
   }
 

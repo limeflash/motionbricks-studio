@@ -112,6 +112,7 @@ function stage(meta) {
   loadedKey = key;
   p.load(meta.rig, clip).then(() => {
     p.setProps(meta.props);
+    p.setKeys(clip.keys || []);
     ready();
     app?.sendLog?.({ level: "info", data: "clip preview loaded" }).catch(() => {});
   }, (err) => {
@@ -126,6 +127,7 @@ function controls(p, clip) {
   const playBtn = h("button", { class: "icon-btn", "aria-label": "Play / pause", html: p.playing ? ICON.pause : ICON.play });
   playBtn.onclick = () => {
     p.playing = !p.playing;
+    if (p.playing) p.focusKey(-1);
     playBtn.innerHTML = p.playing ? ICON.pause : ICON.play;
   };
   const range = h("input", { type: "range", min: 0, max: clip.frames - 1, value: p.frame || 0, "aria-label": "Frame" });
@@ -162,7 +164,10 @@ function controls(p, clip) {
     return g;
   };
   let view = "side";
+  const keysBtn = keys.length > 0 && h("button", { "aria-pressed": String(p.keyGroup.visible), title: "The key poses along the path" }, "Keys");
+  if (keysBtn) keysBtn.onclick = () => keysBtn.setAttribute("aria-pressed", String((p.keyGroup.visible = !p.keyGroup.visible)));
   return h("div", { class: "bar glass" }, playBtn, range, fr, h("span", { class: "feet", title: "Planted feet" }, L, R),
+    keysBtn && h("div", { class: "seg" }, keysBtn),
     seg([[0.25, "¼×"], [0.5, "½×"], [1, "1×"]], () => p.speed, (v) => (p.speed = v)),
     seg([["side", "Side"], ["3/4", "¾"], ["front", "Front"]], () => view, (v) => p.view((view = v))));
 }
@@ -178,7 +183,7 @@ function keysBlock(meta) {
       const m = miss[i];
       return h("button", {
         class: `chip${m > 10 ? " bad" : " on"}`, title: m != null ? `missed by ${m} cm` : `frame ${f + 1}`,
-        onclick: () => { player.playing = false; player.seek(Math.min(f, clip.frames - 1)); },
+        onclick: () => { player.playing = false; player.focusKey(i); player.seek(Math.min(f, clip.frames - 1)); },
       }, h("i"), `K${i + 1} · ${f + 1}` + (m != null ? ` · ${Math.round(m)} cm` : ""));
     })));
 }
