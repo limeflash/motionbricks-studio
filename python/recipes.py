@@ -175,13 +175,34 @@ def feet(p, right=None, left=None):
     return p
 
 
+RUN_TRUNK = {"Hips": [["x", 8]], "Spine2": [["x", 5]], "Chest": [["x", 6]], "Head": [["x", -10]]}
+
+
+def run_step(side, z, reach=0.28, speed=1.0):
+    """a run's contact pose at hips z: the `side` foot planting ahead (feet by IK), the other leg folded behind, the
+    arms swinging opposite (the other arm forward); speed scales the stride for a jog or a slowing step"""
+    o = "Left" if side == "Right" else "Right"
+    sx = 1.0 if side == "Left" else -1.0             # +x is the body's left
+    spec = {"turns": {**RUN_TRUNK, o + "Arm": [["x", -45 * speed]], o + "ForeArm": [["x", -60]],
+                      side + "Arm": [["x", 40 * speed]], side + "ForeArm": [["x", -45]]}}
+    p = at(S.build(spec), z=z, hips_y=0.95)
+    feet(p, **{side.lower(): ((0.1 * sx, 0.09, z + reach * speed), (0, 0.2, 1)),
+               o.lower(): ((-0.1 * sx, 0.09 + 0.3 * speed, z - 0.42 * speed), (0, -0.6, 1))})
+    return grounded(p)
+
+
 def hurdle(height=0.64, speed="run", approach=2.55):
     v = 3.4 if speed == "run" else 2.2               # a walk can't leap: it is a slower, shorter run-up
-    h, a, depth = float(height), float(approach), 0.35
-    f_off = max(10, int(round((a - 0.7) / v * 30)))   # take-off: the hips 0.7 m before the near face
+    h, depth = float(height), 0.35
+    step = v / 3                                     # a step every 10 frames
+    n_run = max(1, int(round((float(approach) - 0.7) / step)))
+    a = 0.7 + n_run * step                           # the near face, so the strides land evenly on the take-off
+    f_off = 10 * n_run                               # take-off: the left foot, the hips 0.7 m before the near face
     f_attack, f_lead, f_clear, f_land = f_off + 2, f_off + 5, f_off + 10, f_off + 13
-    f_end = f_land + 24
+    f_step, f_end = f_land + 9, f_land + 22
     lift = max(0.42, h * 0.8)                        # the hips over the top
+    # the run-in, blocked: contact poses every 10 frames, right and left in turn, ending on the left take-off
+    run = [(f_off - 10 * i, run_step("Right" if i % 2 else "Left", a - 0.7 - step * i)) for i in range(n_run, 0, -1)]
     off = grounded(at(S.build(HURDLE_OFF), z=a - 0.7))
     top = h + 0.36                                   # the lead ankle's height over the box: SKULL's tall foot clears
     # the feet are placed like IK controls (model space), the knees solved toward their poles
@@ -191,12 +212,15 @@ def hurdle(height=0.64, speed="run", approach=2.55):
     clear = feet(at(S.build(HURDLE_CLEAR), z=a + depth + 0.15, hips_y=h + lift - 0.04),
                  right=((-0.1, 0.4, a + depth + 0.45), (0, 0.3, 1)), left=((0.3, top, a + depth + 0.05), (0.6, 0.6, 1)))
     land = grounded(at(S.build(HURDLE_LAND), z=a + depth + 0.5))
-    end = at(S.build("ready"), z=a + depth + 0.5 + (1.9 if speed == "run" else 1.2))
-    keys = [(f_off, off), (f_attack, attack), (f_lead, lead), (f_clear, clear), (f_land, land), (f_end, end)]
-    meta = {"op": "vault", "style": "hurdle", "height_m": h, "approach_m": a, "speed": speed, "takeoff_frame": f_off,
-            "land_frame": f_land, "obstacle": {"near_z": a, "depth": depth, "height": h}}
+    # the run-out: one slowing step on the left, then the stop
+    out_step = run_step("Left", a + depth + 0.5 + 0.75 * step / 1.13, speed=0.7)
+    end = grounded(at(S.build("ready"), z=a + depth + 0.5 + 1.15 * step / 1.13))
+    keys = run + [(f_off, off), (f_attack, attack), (f_lead, lead), (f_clear, clear), (f_land, land),
+                  (f_step, out_step), (f_end, end)]
+    meta = {"op": "vault", "style": "hurdle", "height_m": h, "approach_m": round(a, 3), "speed": speed,
+            "takeoff_frame": f_off, "land_frame": f_land, "obstacle": {"near_z": a, "depth": depth, "height": h}}
     return {"n": f_end + 1, "keys": keys, "effectors": [], "hands": [], "meta": meta,
-            "root_path": [(0, 0.0, 0.0)] + [(f, *hips_xz(p)) for f, p in keys]}
+            "root_path": [(f, *hips_xz(p)) for f, p in keys]}
 
 
 def vault(height=0.64, speed="run", approach=2.55, hand="left", style="hurdle"):
@@ -254,7 +278,8 @@ if __name__ == "__main__":                          # python recipes.py <skeleto
     S.load_skeleton(sys.argv[1])
     for hand, style in (("left", "hurdle"), ("left", "hand"), ("right", "hand")):
         r = vault(hand=hand, style=style)
-        h, a, dep = 0.64, 2.55, 0.35
+        ob = r["meta"]["obstacle"]
+        h, a, dep = ob["height"], ob["near_z"], ob["depth"]
         for f, p in r["keys"]:
             W = S.fk(p)
             low = sole(p)

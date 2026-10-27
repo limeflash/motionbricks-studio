@@ -129,10 +129,17 @@ def plant_hands(A, m, rig):
 
 
 def freak_checks(A, rig, m):
-    """what goes wrong on the freak itself: its knees and ankles (limbs ~0.5 stud thick) through the obstacle, a wrist
-    off its plant"""
+    """what goes wrong on the freak itself: the hips pulled down by the leg solve (a pinned foot the leg can't reach:
+    the freak kneels), its knees and soles through the obstacle, a wrist off its plant"""
     out = []
     P = rig.joint_world(m)
+    raw = A.retarget("take", rig, 1 / FPS, None).root[:, 2]     # the hips' height the motion itself asks for
+    n = min(len(raw), len(m.root))
+    sink = raw[:n] - m.root[:n, 2]
+    bad = np.nonzero(sink > 0.6)[0]
+    if bad.size:
+        out.append("on the freak: the hips sink up to %.1f studs below the motion on frames %d-%d (a planted foot the "
+                   "leg can't reach: the legs fold)" % (sink.max(), bad[0] + 1, bad[-1] + 1))
     ob = META.get("obstacle")
     if ob:
         near = to_freak(A, rig, [0.0, ob["height"], ob["near_z"]])

@@ -34,13 +34,18 @@ def interpolate(n, keys, root_path):
 
 
 def contacts(poses):
-    """a foot planted while its heel or toe is on the floor (L heel, L toe, R heel, R toe, as the models report)"""
+    """a foot planted while its heel or toe is on the floor and it is not gliding (L heel, L toe, R heel, R toe, as the
+    models report): blocking has no steps, so a foot carried along the floor with the body is no plant. Marked planted,
+    the retarget would pin it and sink the hips to keep the legs on it"""
+    W = [S.fk(p) for p in poses]
     fc = []
-    for p in poses:
-        W = S.fk(p)
+    for f, w in enumerate(W):
         row = []
         for s in ("Left", "Right"):
-            row += [float(W[S.JI[s + "Foot"], 1] - 0.068 < 0.03), float(W[S.JI[s + "ToeEnd"], 1] < 0.03)]
+            for j, low in ((S.JI[s + "Foot"], w[S.JI[s + "Foot"], 1] - 0.068), (S.JI[s + "ToeEnd"], w[S.JI[s + "ToeEnd"], 1])):
+                g = W[min(f + 1, len(W) - 1)][j, [0, 2]] - W[max(f - 1, 0)][j, [0, 2]]
+                still = np.linalg.norm(g) / 2 * S.FPS < 0.5          # m/s over the ground
+                row.append(float(low < 0.03 and still))
         fc.append(row)
     return fc
 
