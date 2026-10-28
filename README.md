@@ -1,101 +1,159 @@
 # MotionBricks Studio
 
-A Claude Code plugin for Build a Freak: character motion made offline with NVIDIA **MotionBricks** and **Kimodo**, put
-on a freak through the art pipeline's Blender retarget, shown in a card that plays the clip, and exported as the game's
-clip JSON. One Go binary (MCP over stdio, a local preview server, the card embedded); two Python workers on the runtimes
-already installed on H:. Its shape follows [tripo-studio-mcp](../tripo-studio-mcp).
+**Offline character motion from key poses, driven from Claude Code.** You describe a move; Claude writes the key poses,
+hand and foot targets and the hips' path; NVIDIA **MotionBricks** and **Kimodo** fill in the motion on your GPU; Blender
+puts it on the game character; a card in the chat plays it and says what looks wrong; the clip goes out as the game's
+animation JSON.
 
-**For** reactions, knock-backs, vaults, a limp, transitions and idle drafts. **Not for strikes**: attacks stay
-hand-keyed in Blender (the owner rejected generated punches). **Our own poses only**: every pose is authored here from
-the SOMA T-pose; BONES sample motions and poses (MotionBricks' Smart Primitives and locomotion modes) are never used.
-**Text-free**: Llama / LLM2Vec are cut out and never downloaded (Kimodo runs with `HF_HUB_OFFLINE=1`); the calling
-Claude is the text layer and turns a description into key poses, targets and a root path.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
+![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)
 
-## Tools
-| Tool | Engine | |
-|---|---|---|
-| `motion_hit_reaction` | MotionBricks, ~0.3 s | light / medium / knockback from front, back, left, right. Front knockback = the probe's approved one |
-| `motion_transition` | MotionBricks, ~4 ms a step | from a pose or a clip's end through target poses (or another clip's frame) |
-| `motion_from_keys` | Kimodo, ~2-3 s | full-body key poses, hand/foot targets, the root's ground path |
-| `motion_vault` | Kimodo | over an obstacle by height and speed: a running jump (default, as the probe's approved one) or a one-hand vault |
-| `motion_locomotion` | Kimodo | along a path; `limp_right` / `limp_left` or your own style pose (draft) |
-| `motion_retarget` | Blender, ~10 s | the clip on the freak again with another style preset / travel mode |
-| `motion_export` | | the loco clip JSON to `D:\Pictures\build a freak\forms\skull_anim\generated\skull_<name>_clip.json` |
-| `motion_show`, `motion_poses` | | a clip's card or the recent list; the pose library |
+![The pose editor: a hurdle's key poses standing along the hips' path on the SOMA body](docs/images/editor.png)
 
-Every generation tool takes `name`, `freak` / `form` (SKULL heavy, with the game's 4.0824 legs, is the one wired up),
-and `gpu_ok`. `motion_vault` and `motion_from_keys` also take `blocking=true`: the key poses interpolated on the freak with
-no model and no GPU (`python/blocking.py`, a few seconds), to judge the poses before Kimodo runs through them.
+Built for Build a Freak, a Roblox game, and its character SKULL: reactions, knock-backs, vaults, a limp,
+transitions and idle drafts. It runs fully offline and **text-free**: no language model is ever downloaded for the motion
+models; the Claude you talk to is the text layer.
 
-## Checks: the card says what looks wrong
-Every clip is checked and the card lists what fails (a yellow "Check" pill), and the tool text tells the calling Claude to
-pass it on: keys the model missed by over 10 cm, feet under the floor, legs through the obstacle, a hand or foot off its
-target, a flight that breaks gravity (with both feet off and no hand planted for T s the hips must rise g T²/8 over the
-line between take-off and landing: more hovers, less floats down), joints past what a body can do (a knee past 155° or an
-elbow past 155°, either bent backwards or sideways off its hinge; a hip flexed past 145°, stretched back past 35°, spread
-past 75° or crossed past 30°; calibrated so Kimodo's own leaps pass) (on SOMA, `soma.checks`); and on the freak itself (`blender/retarget.py`): knees and soles through the obstacle
-(SKULL's feet are tall: his ankle sits 0.89 stud over the sole), a hand off its plant, anim's arm clearance pushing the
-arms far off the body, the hips pulled down by the leg solve (a planted foot the leg can't reach: the freak kneels).
-The card also shows each key pose as a button (frame, and how far the motion came out from it).
+## What it looks like
 
-## The pose editor
-A clip made from key poses (`motion_vault`, `motion_from_keys`, and runs of the editor itself) saves them as `keys.json`
-next to its take, and its card gets an "Edit the poses" button: `http://127.0.0.1:5191/edit/<id>`. The keys stand along
-the hips' path on the SOMA body (Kimodo's own skin, `somaskel77/skin_standard.npz`; built once into
-`soma_skin.json`): drag the hands, feet and hips like IK controls (the feet stay planted while the body moves), turn
-any joint with the rings, hide keys or show only the picked ones. "Blocking on the freak" and "Kimodo" run the clip
-again through the changed poses into `<name>_edit-…` and open its card below. Only the poses change: the frames, the
-hips' path (it follows the keys) and the marks stay. The page is served by whichever plugin instance holds the port.
+| The clip on the character, in the chat | Over the box, picked out in the editor |
+|---|---|
+| ![The clip card: SKULL with every key pose along the path](docs/images/card.png) | ![Two airborne key poses on their own, with IK handles](docs/images/editor-solo.png) |
+
+When a pose breaks physics or anatomy, the card says so, and the tool text tells Claude to pass it on:
+
+![A card listing what looks wrong: a flight that breaks gravity and a foot through the obstacle](docs/images/checks.png)
 
 ## How a clip is made
-1. A worker generates a SOMA take (77 joints, 30 fps): `python/mb_worker.py` (MotionBricks' motion player on our
-   poses, ported from the probe's `mb_generate.py`) or `python/kimodo_worker.py` (Kimodo with full-body, end-effector
-   and root-2D constraints, ported from `kimodo_probe.py`). Kimodo's joints map to MotionBricks' by name. Both share
-   `python/soma.py` (posing, the pose library, the CMU-named BVH writer).
-2. `blender/retarget.py` puts it on the freak the way the probe's `b_mb_skull.py` did: `_pipeline/b_skull_loco.py`
-   with the DUMMY pipeline's `anim.py` (retarget, leg solve, arm clearance), SKULL's hinges and style, then
-   `anim_export.game_clip`. Unlike the probe's strikes, anim's input smoothing stays on and nothing is time-warped.
-3. The clip JSON is the format of `forms/skull_anim/loco/README.md` (15 joints, quaternions relative to rest, Blender
-   axes, studs, contacts, marks, `path`). The export passes `_pipeline/loco_export_check.py`'s dry run of the game
-   export (the knockback: 5.6 KB packed, hands and feet within 0.069 studs of the JSON; `clips_export.py` allows 0.08).
 
-The card gets the freak as a small GLB (built once per freak and form, 45k triangles, 512 px WebP base colours) and the
-clip's frames in the tool result, so it needs no server and works in the phone app. The same card is at
-`http://127.0.0.1:5191/clip/<id>` while the server runs.
+```mermaid
+flowchart LR
+  A[You: a move in words] --> B[Claude: key poses,<br/>targets, hips' path]
+  B --> C{Engine}
+  C -->|reactions, transitions| D[MotionBricks]
+  C -->|through key poses| E[Kimodo]
+  C -->|blocking: no GPU| F[keys interpolated]
+  D & E & F --> G[SOMA take<br/>77 joints, 30 fps]
+  G --> H[checks: physics,<br/>anatomy, collisions]
+  G --> I[Blender retarget<br/>onto the character]
+  I --> J[card in the chat]
+  I --> K[clip JSON for the game]
+```
 
-## Rules the server keeps
-- One GPU job at a time (a lock around every worker call). The tools refuse while Roblox (Studio or the player) or a
-  Blender is open; `gpu_ok=true` once the owner confirms nothing is in Play or rendering.
-- Workers start on first use and stop after 10 minutes idle; the server stops only processes it started.
-- Data: `%LOCALAPPDATA%\MotionBricksStudio` (takes, clips, the rig GLBs, worker logs).
+1. **A take on SOMA.** A Python worker generates the motion on NVIDIA's 77-joint SOMA skeleton:
+   `python/mb_worker.py` runs MotionBricks' motion player on our poses, `python/kimodo_worker.py` runs Kimodo with
+   full-body, end-effector and root-path constraints. Both share `python/soma.py` (posing, the pose library, checks, the
+   BVH writer). `python/blocking.py` is the CPU preview: the key poses interpolated, no model, a few seconds.
+2. **On the character.** `blender/retarget.py` retargets the take in Blender (leg solve, arm clearance, the character's
+   own hinges and style) and writes the game's clip format: 15 joints, quaternions relative to rest, studs, foot
+   contacts, marks and the root path.
+3. **In the chat.** The tool result carries the character as a small GLB (45k triangles, 512 px WebP) and the clip's
+   frames, so the card plays it with no server, in the desktop and the phone app. It is an
+   [MCP App](https://github.com/modelcontextprotocol/ext-apps) built with three.js.
+
+One Go binary holds it all: the MCP server over stdio, the local preview server, the card and the editor embedded.
+
+## Tools
+
+| Tool | Engine | What |
+|---|---|---|
+| `motion_hit_reaction` | MotionBricks, ~0.3 s | light, medium or knock-back from the front, back, left or right |
+| `motion_transition` | MotionBricks, ~4 ms a step | from a pose or a clip's end through target poses (or another clip's frame) |
+| `motion_from_keys` | Kimodo, ~3 s | full-body key poses, hand and foot targets, the hips' ground path |
+| `motion_vault` | Kimodo | over an obstacle by height and speed: a running hurdle, or a one-hand vault for taller ones |
+| `motion_locomotion` | Kimodo | along a path; a limp (`limp_right` / `limp_left`) or your own style pose |
+| `motion_retarget` | Blender, ~10 s | the clip on the character again with another style preset or travel mode |
+| `motion_export` | | the clip JSON for the game's clip exporter |
+| `motion_show`, `motion_poses` | | a clip's card or the recent list; the pose library |
+
+`motion_vault` and `motion_from_keys` take `blocking=true`: the key poses alone on the character, no GPU, to judge the
+poses before a model runs through them. The plugin's `motion-studio` skill tells Claude how to write poses and when to use
+which tool.
+
+## The pose editor
+
+Every clip made from key poses has an **Edit the poses** button on its card, opening
+`http://127.0.0.1:5191/edit/<clip>`. The keys stand along the hips' path on the SOMA body, as in MotionBricks' own demo:
+
+- drag the hands, feet and hips like IK controls (the feet stay planted while the body moves);
+- turn any joint with the rings; undo, reset a key;
+- hide keys, show only the picked ones (Ctrl-click to pick several), frame them; `#keys=8,9` in the link opens on those;
+- **Blocking on the freak** or **Kimodo** runs the clip again through your poses and opens the new clip's card below.
+
+The body is Kimodo's own SOMA skin, read from your Kimodo install and skinned in the page.
+
+## Checks: the card says what looks wrong
+
+Every take is checked on SOMA (`soma.checks`) and again on the character (`blender/retarget.py`):
+
+- **Physics.** With both feet off the floor and no hand planted for *T* seconds, the hips must rise *g T²/8* over the
+  line from take-off to landing: more and the body hovers, less and it floats down.
+- **Anatomy.** A knee or elbow bent past 155°, backwards, or sideways off its hinge; a hip flexed past 145°, stretched
+  back past 35°, spread past 75° or crossed past 30°. The limits are calibrated so Kimodo's own leaps pass.
+- **Contact.** Feet under the floor, legs or soles through the obstacle (the character's tall feet included), a hand off
+  its plant, the hips pulled down because a planted foot is out of reach.
+- **The model.** Keys the model came out more than 10 cm from, shown per key on the card.
+
+## Principles
+
+- **Our own poses only.** Every pose is authored here from the SOMA T-pose. The sample motions shipped with the models
+  are for evaluation only; they and the features built on them (MotionBricks' Smart Primitives and locomotion modes)
+  are never used.
+- **Text-free.** Kimodo runs with an empty text encoder and `HF_HUB_OFFLINE=1`; Llama / LLM2Vec weights are never
+  fetched.
+- **Not for attacks.** Strikes stay hand-keyed: generated punches didn't hold up.
+- **Smooth.** Models keep their own pace; segments are slowed with later keys, never with snapped time-warps.
+- **Kind to the GPU.** One GPU job at a time, and none while Roblox (Studio or the player) or a Blender is open, unless
+  you confirm with `gpu_ok=true`. Workers start on first use and stop after 10 minutes idle.
+
+## Requirements
+
+- Windows, an NVIDIA GPU, Go 1.26, Node.js 20+.
+- [MotionBricks](https://nvlabs.github.io/motionbricks/) and Kimodo
+  ([model](https://huggingface.co/nvidia/Kimodo-SOMA-RP-v1.2)) installed with their own Python environments; the
+  [SOMA](https://github.com/NVlabs/SOMA-X) skeleton comes with them.
+- Blender (tested with 5.3).
+- For the retarget onto the character: Build a Freak's art pipeline, which is not part of this repository.
+  `blender/retarget.py` is the one place to change for another rig.
 
 ## Build and install
+
 ```bash
 npm --prefix ui install
 npm --prefix ui run build
 go build -o motionbricks-studio.exe .
-claude plugin marketplace add G:/projects/motionbricks-studio
+claude plugin marketplace add limeflash/motionbricks-studio
 claude plugin install motionbricks-studio@motionbricks-studio
 ```
-The plugin (`plugin/`) carries the MCP server entry and the `motion-studio` skill; the server runs the exe built here,
-so a rebuild takes effect in the next session. `npm --prefix ui run dev` serves a card test host on :5181 that renders
-real results in a sandboxed iframe.
 
-Paths (environment overrides): `MBS_MOTIONBRICKS` `H:\tools\motionbricks`, `MBS_KIMODO` `H:\tools\kimodo`,
-`MBS_HF_HOME` `H:\tools\hf`, `MBS_BLENDER` `H:\Blender\blender.exe`, `MBS_PIPELINE`
-`D:\Pictures\build a freak\_pipeline`, `MBS_GAME` `G:\projects\buildafreak`, `MBS_EXPORT_DIR`, `MBS_DATA`, `MBS_PORT`.
+`plugin/.mcp.json` points at the built `motionbricks-studio.exe`; set it to where you built it. A rebuild takes effect
+in the next session. `npm --prefix ui run dev` serves a card test host that renders real results.
 
-## State (2026-10-27)
-- Done: the knockback end to end (generated from our poses, played in the card, exported and checked).
-- The limp (`limp_right`) reads in numbers: the bad knee bends about half as much as the good one (mean 28° vs 47°),
-  it stands 41% of the time vs 50%, the trunk leans 6° over the good leg.
-- The vault (`python/recipes.py`): by default a running jump like the probe's approved MotionBricks jump, blocked from our
-  own poses with the feet placed like IK controls: the run-in as real strides (contact, mid-stance, push-off with the
-  foot planted, 0.13 s in the air between), the take-off, then a ballistic flight (the hips on a gravity arc whose
-  time comes from the height they must reach) through the knee attack, the lead leg long over the top with the trail
-  knee folding out, the lead foot reaching down as the trail knee comes round, the landing; a slowing step, the stop;
-  it clears the box on SOMA and on SKULL. Kimodo through those keys makes a natural leap but strays 20-25 cm from the
-  airborne keys (reported on the card). `style=hand` is a one-hand tuck vault for taller obstacles: the palm is laid on the
-  top after generation on SOMA and again on SKULL (the retarget carries arm rotations, not hand positions).
-- Drafts, not judged by the owner: the walk along a path, keyed motion.
-- Only SKULL heavy is wired up for the retarget; other freaks and forms need their rigs in `blender/retarget.py`.
+| Variable | Default | |
+|---|---|---|
+| `MBS_MOTIONBRICKS` | `H:\tools\motionbricks` | the MotionBricks checkout and its `.venv` |
+| `MBS_KIMODO` | `H:\tools\kimodo` | the Kimodo checkout and its `.venv` |
+| `MBS_HF_HOME` | `H:\tools\hf` | the Hugging Face cache with the Kimodo weights |
+| `MBS_BLENDER` | `H:\Blender\blender.exe` | Blender |
+| `MBS_PIPELINE`, `MBS_GAME` | the game's paths | the art pipeline and game repository the retarget uses |
+| `MBS_EXPORT_DIR` | the game's generated clips folder | where `motion_export` writes |
+| `MBS_DATA` | `%LOCALAPPDATA%\MotionBricksStudio` | takes, clips, rig GLBs, logs |
+| `MBS_PORT` | `5191` | the preview server and the editor |
+
+## Status
+
+- **Done end to end:** the knock-back, generated from our poses, played in the card, exported and checked against the
+  game's exporter (hands and feet within 0.069 studs).
+- **The limp** reads in numbers: the bad knee bends about half as much as the good one, it stands 41% of the time
+  against 50%, the trunk leans 6° over the good leg.
+- **The hurdle:** a run-in of real strides, a ballistic flight, the lead leg long over the box with the trail knee
+  folding out; clean on SOMA and on SKULL. Through Kimodo it makes a natural leap that strays 15-30 cm from the airborne
+  keys (shown on the card).
+- **Drafts:** walking a path, motion through your own keys. Only SKULL (heavy form) is wired up for the retarget.
+
+## License
+
+[MIT](LICENSE) for this repository. MotionBricks, Kimodo, their models and the SOMA body are not included; they are
+read from your own installs and keep their own licenses (Apache 2.0 for the code, NVIDIA's open model licenses for the
+models). The bundled card and editor include [three.js](https://threejs.org) and the MCP Apps SDK, both MIT.

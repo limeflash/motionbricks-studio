@@ -417,7 +417,12 @@ async function main() {
   $("#block").onclick = () => run("blocking");
   $("#kimodo").onclick = () => run("kimodo");
   modeButtons();
-  select(0);
+  // /edit/<id>#keys=8,9 opens on those keys alone (1-based, as the K buttons count)
+  const want = (location.hash.match(/keys=([\d,]+)/)?.[1] || "").split(",").map((k) => k - 1).filter((k) => figs[k]);
+  if (want.length) {
+    want.forEach((k, i) => select(k, i > 0));
+    only((k) => picked.has(k));
+  } else select(0);
   renderer.setAnimationLoop(() => {
     orbit.update();
     renderer.render(scene, camera);
